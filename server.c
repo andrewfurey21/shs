@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 #include <netdb.h>
@@ -133,6 +134,23 @@ const char *get_client_address(struct client_info* client) {
               NI_NUMERICHOST);
 
   return buf;
+}
+
+fd_set wait_on_clients(struct client_info *root, int socketfd) {
+  fd_set reads;
+  FD_ZERO(&reads);
+  int max = socketfd;
+
+  struct client_info *current = root;
+  while (current != NULL) {
+    FD_SET(current->socketfd, &reads);
+    if (current->socketfd > max)
+      max = current->socketfd;
+    current = current->next;
+  }
+
+  check_error(select(max + 1, &reads, 0, 0, 0), "Select failed.");
+  return reads;
 }
 
 int main() {
