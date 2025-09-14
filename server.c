@@ -5,13 +5,17 @@
 #include <string.h>
 #include <sys/select.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #include <netdb.h>
 #include <sys/socket.h>
+#include <time.h>
 
 #define MAX_REQ_SIZE 2048
+#define MAX_SND_SIZE 2048
 
 const int MAX_BACKLOG = 10;
+const int MAX_FILE_PATH_LEN = 100;
 
 // linked list of clients.
 struct client_info {
@@ -23,7 +27,7 @@ struct client_info {
   char request[MAX_REQ_SIZE];
 };
 
-const char *content_type(const char *file_name) {
+const char *get_content_type(const char *file_name) {
   char *extension = strrchr(file_name, '.');
   if (extension) {
     if (strcmp(extension, ".js") == 0)
@@ -32,8 +36,8 @@ const char *content_type(const char *file_name) {
       return "text/css";
     else if (strcmp(extension, ".html") == 0)
       return "text/html";
-    else if (strcmp(extension, ".txt") == 0)
-      return "text/plain";
+    else if (strcmp(extension, ".png") == 0)
+      return "image/png";
   }
   printf("Error: bad extension\n");
   return NULL;
@@ -107,7 +111,6 @@ struct client_info *get_client(struct client_info *root, int socketfd) {
 void drop_client(struct client_info *root, int socketfd) {
   struct client_info *current = root;
   struct client_info *parent = NULL;
-  
   while (current != NULL && current->socketfd != socketfd) {
     parent = current;
     current = current->next;
@@ -175,9 +178,66 @@ void send_error_not_found(struct client_info *root, struct client_info* client) 
   drop_client(root, client->socketfd);
 }
 
+void send_resource(struct client_info* root,
+                   struct client_info *client,
+                   const char* file_path) {
+  time_t date;
+  time(&date);
+  printf("sending \"%s\"\t%s\ttime: %s",
+         file_path,
+         get_client_address(client),
+         ctime(&date));
+
+  if (strlen(file_path) > MAX_FILE_PATH_LEN)
+    send_error_bad_request(root, client);
+
+  if (strstr(file_path, "..") || strstr(file_path, "\\.\\."))
+    send_error_not_found(root, client);
+
+  const char* public_dir = "./public";
+  char full_path[MAX_FILE_PATH_LEN + strlen(public_dir)];
+
+  if (strcmp(file_path, "/") == 0)
+    sprintf(full_path, "%s/index.html", public_dir);
+  else
+    sprintf(full_path, "%s%s", public_dir, file_path);
+
+  FILE *file = fopen(full_path, "r");
+  if (!file)
+    send_error_not_found(root, client);
+
+  fseek(file, 0L, SEEK_END);
+  size_t file_size = ftell(file);
+  fseek(file, 0L, SEEK_SET);
+
+  const char* content_type = get_content_type(full_path);
+  char send_buffer[MAX_SND_SIZE] = { 0 };
+
+  sprintf(send_buffer,
+          "HTTP/1.1 200 OK\r\n"
+          "Connection: close\r\n"
+          "Content-Length: %ld\r\n"
+          "Content-Type: %s\r\n"
+          "\r\n",
+          file_size, content_type);
+
+
+  send(client->socketfd, send_buffer, strlen(send_buffer), 0);
+
+  bool reading = true;
+  while (reading) {
+    int bytes_read = fread(send_buffer, 1, MAX_SND_SIZE - 1, file);
+    if (bytes_read == 0)
+      reading = false;
+    else
+      send(client->socketfd, send_buffer, strlen(send_buffer), 0);
+  }
+  drop_client(root, client->socketfd);
+}
+
 int main() {
 
-  const char *type = content_type("/homepage.html");
+  const char *type = get_content_type("/homepage.html");
 
   int server_socket = socket_bind_listen("127.0.0.1", "8080");
 
