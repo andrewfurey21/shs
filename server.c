@@ -122,6 +122,19 @@ void drop_client(struct client_info *root, int socketfd) {
   close(socketfd);
 }
 
+const char *get_client_address(struct client_info* client) {
+  static char buf[100];
+  getnameinfo((struct sockaddr*)&client->address,
+              client->address_length,
+              buf,
+              sizeof(char[100]),
+              0,
+              0,
+              NI_NUMERICHOST);
+
+  return buf;
+}
+
 int main() {
 
   const char *type = content_type("/homepage.html");
