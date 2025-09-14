@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <netdb.h>
 #include <sys/socket.h>
@@ -76,13 +77,14 @@ int socket_bind_listen(const char *host, const char *port) {
 
   int s = check_socket(address);
   check_bind(s, address);
+  freeaddrinfo(address);
   check_listen(s, MAX_BACKLOG);
 
   printf("Listening on %s:%s\n", host, port);
   return s;
 }
 
-struct client_info *get_client(int socketfd, struct client_info *root) {
+struct client_info *get_client(struct client_info *root, int socketfd) {
   struct client_info *current = root;
   while (current != NULL && current->socketfd != socketfd)
     current = current->next;
@@ -101,11 +103,30 @@ struct client_info *get_client(int socketfd, struct client_info *root) {
   return current;
 }
 
+void drop_client(struct client_info *root, int socketfd) {
+  struct client_info *current = root;
+  struct client_info *parent = NULL;
+  
+  while (current != NULL && current->socketfd != socketfd) {
+    parent = current;
+    current = current->next;
+  }
+
+  if (current == NULL) {
+    printf("Error: Could not find socket %d\n", socketfd);
+    exit(-1);
+  }
+
+  parent->next = current->next;
+  free(current);
+  close(socketfd);
+}
+
 int main() {
 
   const char *type = content_type("/homepage.html");
 
-  socket_bind_listen("127.0.0.1", "8080");
+  int server_socket = socket_bind_listen("127.0.0.1", "8080");
 
   return 0;
 }
