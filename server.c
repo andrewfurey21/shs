@@ -1,27 +1,43 @@
 
-#include <string.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
+#include <string.h>
 
 #include <netdb.h>
 #include <sys/socket.h>
 
+#define MAX_REQ_SIZE 2048
+
 const int MAX_BACKLOG = 10;
 
-const char* content_type(const char* file_name) {
-  char* extension = strrchr(file_name, '.');
+// linked list of clients.
+struct client_info {
+  socklen_t address_length;
+  struct sockaddr_storage address;
+  int socketfd;
+  int bytes_received;
+  struct client_info *next;
+  char request[MAX_REQ_SIZE];
+};
+
+const char *content_type(const char *file_name) {
+  char *extension = strrchr(file_name, '.');
   if (extension) {
-    if (strcmp(extension, ".js") == 0) return "text/js";
-    else if (strcmp(extension, ".css") == 0) return "text/css";
-    else if (strcmp(extension, ".html") == 0) return "text/html";
-    else if (strcmp(extension, ".txt") == 0) return "text/plain";
+    if (strcmp(extension, ".js") == 0)
+      return "text/js";
+    else if (strcmp(extension, ".css") == 0)
+      return "text/css";
+    else if (strcmp(extension, ".html") == 0)
+      return "text/html";
+    else if (strcmp(extension, ".txt") == 0)
+      return "text/plain";
   }
   printf("Error: bad extension\n");
   return NULL;
 }
 
-void check_error(int error, const char* message) {
+void check_error(int error, const char *message) {
   if (error < 0) {
     printf("Error: %s\n Error Number: %d\n", message, errno);
     exit(-1);
@@ -29,7 +45,8 @@ void check_error(int error, const char* message) {
 }
 
 int check_socket(struct addrinfo *address) {
-  int s = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
+  int s =
+      socket(address->ai_family, address->ai_socktype, address->ai_protocol);
   check_error(s, "Could not create socket.");
   return s;
 }
@@ -44,7 +61,7 @@ void check_listen(int socketfd, int backlog) {
   check_error(listening, "Could not listen to socket.");
 }
 
-int socket_bind_listen(const char* host, const char* port) {
+int socket_bind_listen(const char *host, const char *port) {
   struct addrinfo hints;
   memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_socktype = SOCK_STREAM;
@@ -65,9 +82,28 @@ int socket_bind_listen(const char* host, const char* port) {
   return s;
 }
 
+struct client_info *get_client(int socketfd, struct client_info *root) {
+  struct client_info *current = root;
+  while (current != NULL && current->socketfd != socketfd)
+    current = current->next;
+
+  if (current == NULL) {
+    struct client_info *new_client =
+      (struct client_info *)calloc(1, sizeof(struct client_info));
+    current->next = new_client;
+    current = new_client;
+    if (new_client == NULL) {
+      printf("Error: could not allocate new client\n");
+      exit(-1);
+    }
+  }
+
+  return current;
+}
+
 int main() {
 
-  const char* type = content_type("/homepage.html");
+  const char *type = content_type("/homepage.html");
 
   socket_bind_listen("127.0.0.1", "8080");
 
