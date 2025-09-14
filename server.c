@@ -29,9 +29,7 @@ struct client_info {
 const char *get_content_type(const char *file_name) {
   char *extension = strrchr(file_name, '.');
   if (extension) {
-    if (strcmp(extension, ".js") == 0)
-      return "text/js";
-    else if (strcmp(extension, ".css") == 0)
+    if (strcmp(extension, ".css") == 0)
       return "text/css";
     else if (strcmp(extension, ".html") == 0)
       return "text/html";
@@ -166,9 +164,9 @@ void send_error_bad_request(struct client_info **client_list,
                             struct client_info *client) {
   const char *message = "HTTP/1.1 400 Bad Request\r\n"
                         "Connection: close\r\n"
-                        "Content-Length: 11\r\n"
+                        "Content-Length: 14\r\n"
                         "\r\n"
-                        "Bad Request";
+                        "Bad Request :(";
   send(client->socketfd, message, strlen(message), 0);
   drop_client(client_list, client->socketfd);
 }
@@ -178,9 +176,9 @@ void send_error_not_found(struct client_info **client_list,
                           struct client_info *client) {
   const char *message = "HTTP/1.1 404 Not Found\r\n"
                         "Connection: close\r\n"
-                        "Content-Length: 9\r\n"
+                        "Content-Length: 25\r\n"
                         "\r\n"
-                        "Not Found";
+                        "<h1>Not found, loser</h1>";
 
   send(client->socketfd, message, strlen(message), 0);
   drop_client(client_list, client->socketfd);
@@ -208,9 +206,11 @@ void send_resource(struct client_info **client_list, struct client_info *client,
   else
     sprintf(full_path, "%s%s", public_dir, file_path);
 
-  FILE *file = fopen(full_path, "r");
-  if (!file)
+  FILE *file = fopen(full_path, "rb");
+  if (!file) {
     send_error_not_found(client_list, client);
+    return;
+  }
 
   fseek(file, 0L, SEEK_END);
   size_t file_size = ftell(file);
@@ -227,13 +227,14 @@ void send_resource(struct client_info **client_list, struct client_info *client,
           "\r\n",
           file_size, content_type);
 
+  printf("size: %ld\n", file_size);
   send(client->socketfd, send_buffer, strlen(send_buffer), 0);
 
   bool reading = true;
   while (reading) {
     int bytes_read = fread(send_buffer, 1, MAX_SND_SIZE, file);
     reading = !!bytes_read;
-    send(client->socketfd, send_buffer, strlen(send_buffer), 0);
+    send(client->socketfd, send_buffer, bytes_read, 0);
   }
 
   fclose(file);
@@ -254,7 +255,7 @@ int main() {
                                 &client->address_length);
       check_error(client->socketfd, "Could not accept client.");
       char *addrstr = get_client_address(client);
-      printf("New connection: %s\n", addrstr);
+      printf("------------------\nNew connection: %s\n", addrstr);
       free(addrstr);
       fflush(stdout);
     }
@@ -293,7 +294,7 @@ int main() {
                 (char *)calloc(sizeof(char), path_end - path_start);
             strncpy(file_path, path_start, path_end - path_start);
             char *addrstr = get_client_address(client);
-            printf("Sending %s to %s", file_path, addrstr);
+            printf("Sending %s to %s\n", file_path, addrstr);
             free(addrstr);
             send_resource(&client_list, client, file_path);
             free(file_path);
