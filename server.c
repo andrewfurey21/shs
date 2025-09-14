@@ -153,6 +153,28 @@ fd_set wait_on_clients(struct client_info *root, int socketfd) {
   return reads;
 }
 
+void send_error_bad_request(struct client_info *root, struct client_info* client) {
+  const char* message = "HTTP/1.1 400 Bad Request\r\n"
+                        "Connection: close\r\n"
+                        "Content-Length: 11\r\n"
+                        "\r\n"
+                        "Bad Request";
+  send(client->socketfd, message, strlen(message), 0);
+  drop_client(root, client->socketfd);
+}
+
+// redirect
+void send_error_not_found(struct client_info *root, struct client_info* client) {
+  const char* message = "HTTP/1.1 404 Not Found\r\n"
+                        "Connection: close\r\n"
+                        "Content-Length: 9\r\n"
+                        "\r\n"
+                        "Not Found";
+
+  send(client->socketfd, message, strlen(message), 0);
+  drop_client(root, client->socketfd);
+}
+
 int main() {
 
   const char *type = content_type("/homepage.html");
